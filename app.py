@@ -6,9 +6,10 @@ from functools import wraps
 import psycopg2
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from psycopg2.extras import Json, RealDictCursor
 from psycopg2.pool import SimpleConnectionPool
+from telemetry import init_telemetry
 
 # Configura o logging
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,7 @@ log = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__)
+telemetry = init_telemetry(app, "targeting-service")
 
 # --- Configuração ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -48,7 +50,12 @@ def require_auth(f):
 
         try:
             validate_url = f"{AUTH_SERVICE_URL}/validate"
-            response = requests.get(validate_url, headers={"Authorization": auth_header}, timeout=3)
+            req_headers = {"Authorization": auth_header}
+            if hasattr(g, "traceparent") and g.traceparent:
+                req_headers["traceparent"] = g.traceparent
+            response = requests.get(
+                validate_url, headers=req_headers, timeout=3
+            )
 
             if response.status_code != 200:
                 log.warning(f"Falha na validação da chave (status: {response.status_code})")
